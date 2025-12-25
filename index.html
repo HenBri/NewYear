@@ -506,8 +506,7 @@
 
             // Si hubo movimiento significativo, ignorar como tap (evita conflicto con rotación)
             if (deltaX > dragThreshold || deltaY > dragThreshold) {
-                isPotentialTap = false;
-                return;
+                return; // No set isPotentialTap=false aquí, ya que se maneja en move
             }
 
             if (deltaTime < tapThreshold && deltaTime > 0) {
@@ -524,7 +523,7 @@
                 // Single tap potential
                 tapCount = 1;
                 tapTimeout = setTimeout(() => {
-                    if (isPotentialTap && tapCount === 1) {
+                    if (tapCount === 1) {
                         if (state === 'EXPLODE') {
                             state = 'PHOTO';
                         } else if (state === 'PHOTO') {
@@ -533,7 +532,6 @@
                         updateStatus(document.getElementById('status'), state);
                     }
                     tapCount = 0;
-                    isPotentialTap = true;
                 }, tapThreshold);
             }
             lastTapTime = now;
@@ -542,11 +540,16 @@
         // Mejora: Touch handlers optimizados para evitar conflictos drag/tap
         function handleTouchStart(e) {
             e.preventDefault();
-            if (e.touches.length === 1 && state === 'EXPLODE') {
-                isDragging = true;
+            if (e.touches.length === 1) {
+                // Siempre resetear para taps potenciales, independientemente del estado
                 isPotentialTap = true;
                 startTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                lastMouseX = e.touches[0].clientX;
+                if (state === 'EXPLODE') {
+                    isDragging = true;
+                    lastMouseX = e.touches[0].clientX;
+                } else {
+                    isDragging = false;
+                }
             }
         }
 
@@ -567,15 +570,12 @@
 
         function handleTouchEnd(e) {
             e.preventDefault();
-            const clientX = e.changedTouches ? e.changedTouches[0].clientX : 0;
-            const clientY = e.changedTouches ? e.changedTouches[0].clientY : 0;
-            if (isPotentialTap) {
+            if (e.touches.length === 0 && isPotentialTap) {
+                const clientX = e.changedTouches[0].clientX;
+                const clientY = e.changedTouches[0].clientY;
                 handleTap(e, clientX, clientY);
             }
-            if (isDragging && e.touches.length === 0) {
-                isDragging = false;
-            }
-            isPotentialTap = true; // Reset para próximo toque
+            isDragging = false;
         }
 
         // ==========================================
@@ -623,12 +623,12 @@
 
             canvas.addEventListener('click', (e) => {
                 e.preventDefault();
-                if (mouseIsPotentialClick && state === 'EXPLODE') {
-                    state = 'PHOTO';
-                } else if (mouseIsPotentialClick && state === 'PHOTO') {
-                    state = 'EXPLODE';
-                }
                 if (mouseIsPotentialClick) {
+                    if (state === 'EXPLODE') {
+                        state = 'PHOTO';
+                    } else if (state === 'PHOTO') {
+                        state = 'EXPLODE';
+                    }
                     updateStatus(statusDiv, state);
                 }
                 mouseIsPotentialClick = true;
@@ -674,9 +674,6 @@
             canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
             canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-            // Usar touchend para taps (ya integrado en handleTouchEnd)
-            // Remover el viejo handleTap directo en touchend para evitar duplicados
-
             canvas.style.cursor = 'grab';
             canvas.style.touchAction = 'none'; // Prevent default touch behaviors
         }
@@ -689,10 +686,6 @@
                 camera.aspect = window.innerWidth/window.innerHeight; 
                 camera.updateProjectionMatrix(); 
                 renderer.setSize(window.innerWidth, window.innerHeight); 
-                // Optimización: Recalcular counts en resize para mejor rendimiento en orientación change
-                if (window.innerWidth < 768 && CONFIG.goldCount !== 600) {
-                    location.reload(); // Simple reload para recalcular partículas (mejor que rebuild dinámico por simplicidad)
-                }
             }
         });
         
