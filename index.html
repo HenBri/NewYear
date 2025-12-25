@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Regalos y Luces Navideñas</title>
    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -16,6 +16,7 @@
             -webkit-touch-callout: none;
             -webkit-user-select: none;
             user-select: none;
+            touch-action: none; /* Prevenir scroll y zoom por defecto en body */
         }
         #canvas-container { 
             width: 100%; 
@@ -153,6 +154,7 @@
         let bgMusic = new Audio(MUSIC_URL);
         bgMusic.loop = true; bgMusic.volume = 0.7;
         bgMusic.preload = 'auto'; // Pre-cargar audio para autoplay más fluido
+        let audioPlayed = false; // Flag para rastrear si ya se reprodujo
 
         const loader = new THREE.TextureLoader();
         const photoFiles = ['./image1.jpeg', './image2.jpeg', './image3.jpeg', './image4.jpeg', './image5.jpeg', './image6.jpeg', './image7.jpeg'];
@@ -241,7 +243,7 @@
         let lastMouseX = 0;
 
         // Mejora: Variables para detectar drags vs taps con precisión (umbral de movimiento)
-        let dragThreshold = 10; // Píxeles para considerar drag
+        let dragThreshold = 5; // Reducido para mejor sensibilidad en móviles
         let startTouchPos = { x: 0, y: 0 };
         let isPotentialTap = true;
         let lastTapTime = 0;
@@ -249,7 +251,7 @@
         // Touch support variables - Optimizado para double-tap detection sin conflictos
         let tapCount = 0;
         let tapTimeout;
-        const tapThreshold = 300; // ms for double tap
+        const tapThreshold = 400; // Aumentado ligeramente para mejor detección en móviles
 
         // ==========================================
         // 3. Vandiep - Init optimizado con lazy loading de geometrías
@@ -496,6 +498,34 @@
             renderer.render(scene, camera);
         }
 
+        // Función para prevenir zoom en double-tap (adicional a la meta viewport)
+        let lastTouchEnd = 0;
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+
+        let lastTouchStart = 0;
+        document.addEventListener('touchend', function(event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+
+        document.addEventListener('touchstart', function(event) {
+            lastTouchStart = event.timeStamp;
+        }, false);
+
+        document.addEventListener('touchend', function(event) {
+            const delta = event.timeStamp - lastTouchStart;
+            if (delta < 500 && delta > 0) {
+                event.preventDefault();
+            }
+        }, false);
+
         // Mejora: Función unificada para manejar taps (single/double) con detección de drag
         function handleTap(e, clientX, clientY) {
             e.preventDefault();
@@ -506,7 +536,7 @@
 
             // Si hubo movimiento significativo, ignorar como tap (evita conflicto con rotación)
             if (deltaX > dragThreshold || deltaY > dragThreshold) {
-                return; // No set isPotentialTap=false aquí, ya que se maneja en move
+                return;
             }
 
             if (deltaTime < tapThreshold && deltaTime > 0) {
@@ -523,7 +553,7 @@
                 // Single tap potential
                 tapCount = 1;
                 tapTimeout = setTimeout(() => {
-                    if (tapCount === 1) {
+                    if (isPotentialTap && tapCount === 1) {
                         if (state === 'EXPLODE') {
                             state = 'PHOTO';
                         } else if (state === 'PHOTO') {
@@ -550,6 +580,15 @@
                 } else {
                     isDragging = false;
                 }
+                // Mejora para audio en móviles: Reproducir en el primer toque si no ha empezado
+                if (!audioPlayed) {
+                    bgMusic.play().then(() => {
+                        audioPlayed = true;
+                        console.log('Audio iniciado por gesto de usuario');
+                    }).catch(err => {
+                        console.warn('Error al reproducir audio:', err);
+                    });
+                }
             }
         }
 
@@ -570,12 +609,13 @@
 
         function handleTouchEnd(e) {
             e.preventDefault();
-            if (e.touches.length === 0 && isPotentialTap) {
+            if (e.touches.length === 0 && isPotentialTap && e.changedTouches && e.changedTouches.length > 0) {
                 const clientX = e.changedTouches[0].clientX;
                 const clientY = e.changedTouches[0].clientY;
                 handleTap(e, clientX, clientY);
             }
             isDragging = false;
+            isPotentialTap = true; // Reset para próximo toque
         }
 
         // ==========================================
@@ -587,16 +627,12 @@
             // Mejora: Intentar autoplay de música inmediatamente, fallback a user gesture si falla
             const playPromise = bgMusic.play();
             if (playPromise !== undefined) {
-                playPromise.catch(e => {
+                playPromise.then(() => {
+                    audioPlayed = true;
+                    console.log('Audio iniciado automáticamente');
+                }).catch(e => {
                     console.log('Autoplay bloqueado, esperando interacción:', e);
-                    // Reintentar en primer toque/mouse
-                    const retryPlay = () => {
-                        bgMusic.play().catch(() => {}); // Silencioso en reintentos
-                        document.removeEventListener('touchstart', retryPlay);
-                        document.removeEventListener('click', retryPlay);
-                    };
-                    document.addEventListener('touchstart', retryPlay, { once: true });
-                    document.addEventListener('click', retryPlay, { once: true });
+                    // Remover listeners de document ya que ahora se maneja en handleTouchStart
                 });
             }
             
@@ -619,6 +655,10 @@
                     state = 'TREE';
                 }
                 updateStatus(statusDiv, state);
+                // Para desktop: Intentar play en dblclick si no ha empezado
+                if (!audioPlayed) {
+                    bgMusic.play().then(() => { audioPlayed = true; }).catch(() => {});
+                }
             });
 
             canvas.addEventListener('click', (e) => {
@@ -632,6 +672,10 @@
                     updateStatus(statusDiv, state);
                 }
                 mouseIsPotentialClick = true;
+                // Para desktop: Intentar play en click si no ha empezado
+                if (!audioPlayed) {
+                    bgMusic.play().then(() => { audioPlayed = true; }).catch(() => {});
+                }
             });
 
             canvas.addEventListener('mousedown', (e) => {
