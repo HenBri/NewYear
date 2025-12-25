@@ -147,14 +147,51 @@
 
     <script>
         // ==========================================
-        // 1. Vandiep - Optimizado para carga inicial más rápida
+        // 1. Vandiep - Audio con Web Audio API para mejor compatibilidad en móviles
         // ==========================================
         
         const MUSIC_URL = "./audio.mp3";
-        let bgMusic = new Audio(MUSIC_URL);
-        bgMusic.loop = true; bgMusic.volume = 0.7;
-        bgMusic.preload = 'auto'; // Pre-cargar audio para autoplay más fluido
-        let audioPlayed = false; // Flag para rastrear si ya se reprodujo
+        let audioContext = null;
+        let audioBuffer = null;
+        let audioSource = null;
+        let audioStarted = false;
+        let volumeNode = null;
+
+        async function loadAudio() {
+            try {
+                const response = await fetch(MUSIC_URL);
+                const arrayBuffer = await response.arrayBuffer();
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                volumeNode = audioContext.createGain();
+                volumeNode.gain.value = 0.7;
+                volumeNode.connect(audioContext.destination);
+                console.log('Audio cargado correctamente');
+            } catch (err) {
+                console.error('Error cargando audio:', err);
+            }
+        }
+
+        async function playAudio() {
+            if (audioStarted || !audioBuffer) return;
+            try {
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                audioSource = audioContext.createBufferSource();
+                audioSource.buffer = audioBuffer;
+                audioSource.loop = true;
+                audioSource.connect(volumeNode);
+                audioSource.start(0);
+                audioStarted = true;
+                console.log('Audio iniciado');
+            } catch (err) {
+                console.error('Error reproduciendo audio:', err);
+            }
+        }
+
+        // Cargar audio al inicio
+        loadAudio();
 
         const loader = new THREE.TextureLoader();
         const photoFiles = ['./image1.jpeg', './image2.jpeg', './image3.jpeg', './image4.jpeg', './image5.jpeg', './image6.jpeg', './image7.jpeg'];
@@ -580,15 +617,8 @@
                 } else {
                     isDragging = false;
                 }
-                // Mejora para audio en móviles: Reproducir en el primer toque si no ha empezado
-                if (!audioPlayed) {
-                    bgMusic.play().then(() => {
-                        audioPlayed = true;
-                        console.log('Audio iniciado por gesto de usuario');
-                    }).catch(err => {
-                        console.warn('Error al reproducir audio:', err);
-                    });
-                }
+                // Iniciar audio en el primer toque
+                playAudio();
             }
         }
 
@@ -624,18 +654,6 @@
         function startSystem() {
             document.getElementById('instructions').style.display = 'none';
             
-            // Mejora: Intentar autoplay de música inmediatamente, fallback a user gesture si falla
-            const playPromise = bgMusic.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    audioPlayed = true;
-                    console.log('Audio iniciado automáticamente');
-                }).catch(e => {
-                    console.log('Autoplay bloqueado, esperando interacción:', e);
-                    // Remover listeners de document ya que ahora se maneja en handleTouchStart
-                });
-            }
-            
             init3D();
 
             const statusDiv = document.getElementById('status');
@@ -655,10 +673,8 @@
                     state = 'TREE';
                 }
                 updateStatus(statusDiv, state);
-                // Para desktop: Intentar play en dblclick si no ha empezado
-                if (!audioPlayed) {
-                    bgMusic.play().then(() => { audioPlayed = true; }).catch(() => {});
-                }
+                // Para desktop: Iniciar audio en dblclick
+                playAudio();
             });
 
             canvas.addEventListener('click', (e) => {
@@ -672,10 +688,8 @@
                     updateStatus(statusDiv, state);
                 }
                 mouseIsPotentialClick = true;
-                // Para desktop: Intentar play en click si no ha empezado
-                if (!audioPlayed) {
-                    bgMusic.play().then(() => { audioPlayed = true; }).catch(() => {});
-                }
+                // Para desktop: Iniciar audio en click
+                playAudio();
             });
 
             canvas.addEventListener('mousedown', (e) => {
