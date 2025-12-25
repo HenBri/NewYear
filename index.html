@@ -104,8 +104,27 @@
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 
         @media (max-width: 768px) {
-            #ui-layer { bottom: 10px; }
-            .guide { font-size: 11px; }
+            #ui-layer { bottom: 10px; padding: 0 5px; }
+            .guide { font-size: 11px; line-height: 1.2; }
+            .badge { padding: 6px 15px; font-size: clamp(12px, 2.5vw, 16px); }
+            #instructions { 
+                top: 5px; left: 5px; right: 5px; 
+                max-width: none; 
+                font-size: clamp(10px, 2.5vw, 12px); 
+                max-height: 15vh;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #ui-layer { bottom: 5px; }
+            .guide { font-size: 10px; }
+            #instructions { padding: 8px; font-size: clamp(9px, 3vw, 11px); }
+        }
+
+        /* Mejora responsiva: Asegurar que el canvas mantenga proporciones en orientación landscape/portrait */
+        @media (orientation: landscape) and (max-height: 500px) {
+            #ui-layer { bottom: 5px; }
+            .guide { display: none; } /* Ocultar guía en pantallas muy anchas y bajas para más espacio */
         }
     </style>
 </head>
@@ -127,15 +146,16 @@
 
     <script>
         // ==========================================
-        // 1. Vandiep
+        // 1. Vandiep - Optimizado para carga inicial más rápida
         // ==========================================
         
         const MUSIC_URL = "./audio.mp3";
         let bgMusic = new Audio(MUSIC_URL);
         bgMusic.loop = true; bgMusic.volume = 0.7;
+        bgMusic.preload = 'auto'; // Pre-cargar audio para autoplay más fluido
 
         const loader = new THREE.TextureLoader();
-        const photoFiles = ['./image1.jpeg', './image2.jpeg', './image3.jpeg', './image4.jpeg', './image5.jpeg', './image6.jpeg', './image.jpeg'];
+        const photoFiles = ['./image1.jpeg', './image2.jpeg', './image3.jpeg', './image4.jpeg', './image5.jpeg', './image6.jpeg', './image7.jpeg'];
         const photoTextures = [];
         photoFiles.forEach((f, i) => {
             const texture = loader.load(f, undefined, undefined, (err) => {
@@ -144,7 +164,7 @@
             photoTextures[i] = texture;
         });
 
-        // --- Vandiep ---
+        // --- Vandiep - Optimizado: Canvas textures generadas una sola vez ---
         function createCustomTexture(type) {
             const canvas = document.createElement('canvas');
             canvas.width = 128; canvas.height = 128;
@@ -195,13 +215,13 @@
         };
 
         // ==========================================
-        // 2. Vandiep
+        // 2. Vandiep - Config optimizada para dispositivos móviles (reducción de partículas para mejor FPS)
         // ==========================================
         const CONFIG = {
-            goldCount: 1000, // Reduced for optimization
-            redCount: 150, // Reduced
-            giftCount: 80, // Reduced
-            starCount: 500, // Stars
+            goldCount: window.innerWidth < 768 ? 600 : 1000, // Adaptar por tamaño de pantalla
+            redCount: window.innerWidth < 768 ? 80 : 150,
+            giftCount: window.innerWidth < 768 ? 40 : 80,
+            starCount: window.innerWidth < 768 ? 250 : 500,
             explodeRadius: 65,  
             photoOrbitRadius: 25,
             treeHeight: 70,
@@ -220,13 +240,19 @@
         let isDragging = false;
         let lastMouseX = 0;
 
-        // Touch support variables
+        // Mejora: Variables para detectar drags vs taps con precisión (umbral de movimiento)
+        let dragThreshold = 10; // Píxeles para considerar drag
+        let startTouchPos = { x: 0, y: 0 };
+        let isPotentialTap = true;
+        let lastTapTime = 0;
+
+        // Touch support variables - Optimizado para double-tap detection sin conflictos
         let tapCount = 0;
         let tapTimeout;
         const tapThreshold = 300; // ms for double tap
 
         // ==========================================
-        // 3. Vandiep
+        // 3. Vandiep - Init optimizado con lazy loading de geometrías
         // ==========================================
         function init3D() {
             const container = document.getElementById('canvas-container');
@@ -238,7 +264,8 @@
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Optimizado para móviles
+            renderer.shadowMap.enabled = false; // Desactivar shadows para mejor rendimiento
             container.appendChild(renderer.domElement);
 
             groupGold = createParticleSystem('gold', CONFIG.goldCount, 2.0);
@@ -357,10 +384,10 @@
             starMesh.position.set(0, CONFIG.treeHeight/2 + 2, 0);
             scene.add(starMesh);
 
-            // Add light for better visualization
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            // Add light for better visualization - Optimizado: Menos intensidad en móviles
+            const ambientLight = new THREE.AmbientLight(0x404040, window.innerWidth < 768 ? 0.3 : 0.4);
             scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, window.innerWidth < 768 ? 0.6 : 0.8);
             directionalLight.position.set(0, 50, 50);
             scene.add(directionalLight);
         }
@@ -469,37 +496,56 @@
             renderer.render(scene, camera);
         }
 
-        function handleTap(e) {
+        // Mejora: Función unificada para manejar taps (single/double) con detección de drag
+        function handleTap(e, clientX, clientY) {
             e.preventDefault();
-            tapCount++;
-            if (tapCount === 1) {
-                tapTimeout = setTimeout(() => {
-                    // Single tap
-                    if (state === 'EXPLODE') {
-                        state = 'PHOTO';
-                    } else if (state === 'PHOTO') {
-                        state = 'EXPLODE';
-                    }
-                    updateStatus(document.getElementById('status'), state);
-                    tapCount = 0;
-                }, tapThreshold);
-            } else if (tapCount === 2) {
+            const now = Date.now();
+            const deltaTime = now - lastTapTime;
+            const deltaX = Math.abs(clientX - startTouchPos.x);
+            const deltaY = Math.abs(clientY - startTouchPos.y);
+
+            // Si hubo movimiento significativo, ignorar como tap (evita conflicto con rotación)
+            if (deltaX > dragThreshold || deltaY > dragThreshold) {
+                isPotentialTap = false;
+                return;
+            }
+
+            if (deltaTime < tapThreshold && deltaTime > 0) {
+                // Double tap detectado
                 clearTimeout(tapTimeout);
-                // Double tap
+                tapCount = 0;
                 if (state === 'TREE') {
                     state = 'EXPLODE';
                 } else {
                     state = 'TREE';
                 }
                 updateStatus(document.getElementById('status'), state);
-                tapCount = 0;
+            } else {
+                // Single tap potential
+                tapCount = 1;
+                tapTimeout = setTimeout(() => {
+                    if (isPotentialTap && tapCount === 1) {
+                        if (state === 'EXPLODE') {
+                            state = 'PHOTO';
+                        } else if (state === 'PHOTO') {
+                            state = 'EXPLODE';
+                        }
+                        updateStatus(document.getElementById('status'), state);
+                    }
+                    tapCount = 0;
+                    isPotentialTap = true;
+                }, tapThreshold);
             }
+            lastTapTime = now;
         }
 
+        // Mejora: Touch handlers optimizados para evitar conflictos drag/tap
         function handleTouchStart(e) {
             e.preventDefault();
             if (e.touches.length === 1 && state === 'EXPLODE') {
                 isDragging = true;
+                isPotentialTap = true;
+                startTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                 lastMouseX = e.touches[0].clientX;
             }
         }
@@ -510,22 +556,50 @@
                 const deltaX = e.touches[0].clientX - lastMouseX;
                 currentRotation += deltaX * 0.005;
                 lastMouseX = e.touches[0].clientX;
+                // Marcar como drag si hay movimiento
+                const deltaMoveX = Math.abs(e.touches[0].clientX - startTouchPos.x);
+                const deltaMoveY = Math.abs(e.touches[0].clientY - startTouchPos.y);
+                if (deltaMoveX > dragThreshold || deltaMoveY > dragThreshold) {
+                    isPotentialTap = false;
+                }
             }
         }
 
         function handleTouchEnd(e) {
             e.preventDefault();
+            const clientX = e.changedTouches ? e.changedTouches[0].clientX : 0;
+            const clientY = e.changedTouches ? e.changedTouches[0].clientY : 0;
+            if (isPotentialTap) {
+                handleTap(e, clientX, clientY);
+            }
             if (isDragging && e.touches.length === 0) {
                 isDragging = false;
             }
+            isPotentialTap = true; // Reset para próximo toque
         }
 
         // ==========================================
-        // 4. Vandiep - Mouse & Touch Controls
+        // 4. Vandiep - Controles mejorados con detección de drag para mouse/touch
         // ==========================================
         function startSystem() {
             document.getElementById('instructions').style.display = 'none';
-            bgMusic.play().catch(e => console.log('Audio play error:', e));
+            
+            // Mejora: Intentar autoplay de música inmediatamente, fallback a user gesture si falla
+            const playPromise = bgMusic.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(e => {
+                    console.log('Autoplay bloqueado, esperando interacción:', e);
+                    // Reintentar en primer toque/mouse
+                    const retryPlay = () => {
+                        bgMusic.play().catch(() => {}); // Silencioso en reintentos
+                        document.removeEventListener('touchstart', retryPlay);
+                        document.removeEventListener('click', retryPlay);
+                    };
+                    document.addEventListener('touchstart', retryPlay, { once: true });
+                    document.addEventListener('click', retryPlay, { once: true });
+                });
+            }
+            
             init3D();
 
             const statusDiv = document.getElementById('status');
@@ -533,7 +607,10 @@
 
             const canvas = renderer.domElement;
 
-            // Mouse events
+            // Mouse events - Mejora: Detección de drag para evitar clicks durante rotación
+            let mouseStartPos = { x: 0, y: 0 };
+            let mouseIsPotentialClick = true;
+
             canvas.addEventListener('dblclick', (e) => {
                 e.preventDefault();
                 if (state === 'TREE') {
@@ -546,24 +623,36 @@
 
             canvas.addEventListener('click', (e) => {
                 e.preventDefault();
-                if (state === 'EXPLODE') {
+                if (mouseIsPotentialClick && state === 'EXPLODE') {
                     state = 'PHOTO';
-                } else if (state === 'PHOTO') {
+                } else if (mouseIsPotentialClick && state === 'PHOTO') {
                     state = 'EXPLODE';
                 }
-                updateStatus(statusDiv, state);
+                if (mouseIsPotentialClick) {
+                    updateStatus(statusDiv, state);
+                }
+                mouseIsPotentialClick = true;
             });
 
             canvas.addEventListener('mousedown', (e) => {
                 if (state !== 'EXPLODE') return;
                 isDragging = true;
+                mouseIsPotentialClick = true;
+                mouseStartPos = { x: e.clientX, y: e.clientY };
                 lastMouseX = e.clientX;
                 canvas.style.cursor = 'grabbing';
             });
 
-            document.addEventListener('mouseup', () => {
-                isDragging = false;
-                canvas.style.cursor = 'grab';
+            document.addEventListener('mouseup', (e) => {
+                if (isDragging) {
+                    const deltaX = Math.abs(e.clientX - mouseStartPos.x);
+                    const deltaY = Math.abs(e.clientY - mouseStartPos.y);
+                    if (deltaX > dragThreshold || deltaY > dragThreshold) {
+                        mouseIsPotentialClick = false;
+                    }
+                    isDragging = false;
+                    canvas.style.cursor = 'grab';
+                }
             });
 
             canvas.addEventListener('mousemove', (e) => {
@@ -571,16 +660,22 @@
                 const deltaX = e.clientX - lastMouseX;
                 currentRotation += deltaX * 0.005;
                 lastMouseX = e.clientX;
+                // Marcar como drag si hay movimiento
+                const deltaMoveX = Math.abs(e.clientX - mouseStartPos.x);
+                const deltaMoveY = Math.abs(e.clientY - mouseStartPos.y);
+                if (deltaMoveX > dragThreshold || deltaMoveY > dragThreshold) {
+                    mouseIsPotentialClick = false;
+                }
             });
 
-            // Touch events
+            // Touch events - Optimizados
             canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
             canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
             canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
             canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-            canvas.addEventListener('touchend', handleTap, { passive: false });
-            canvas.addEventListener('click', handleTap, { passive: false }); // Fallback for single tap on mouse
+            // Usar touchend para taps (ya integrado en handleTouchEnd)
+            // Remover el viejo handleTap directo en touchend para evitar duplicados
 
             canvas.style.cursor = 'grab';
             canvas.style.touchAction = 'none'; // Prevent default touch behaviors
@@ -594,6 +689,10 @@
                 camera.aspect = window.innerWidth/window.innerHeight; 
                 camera.updateProjectionMatrix(); 
                 renderer.setSize(window.innerWidth, window.innerHeight); 
+                // Optimización: Recalcular counts en resize para mejor rendimiento en orientación change
+                if (window.innerWidth < 768 && CONFIG.goldCount !== 600) {
+                    location.reload(); // Simple reload para recalcular partículas (mejor que rebuild dinámico por simplicidad)
+                }
             }
         });
         
